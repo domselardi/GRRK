@@ -6,6 +6,7 @@ const ELIXIR = "Elixir of the Mongoose";
 const BRIE = "Aged Brie";
 const SULFURAS = "Sulfuras, Hand of Ragnaros";
 const PASSES = "Backstage passes to a TAFKAL80ETC concert";
+const CONJURED = "Conjured Mana Cake";
 
 // Runs one day for a single item and returns the item afterwards
 function afterOneDay(name, sellIn, quality) {
@@ -73,6 +74,21 @@ describe("Gilded Rose", function() {
     it("never go above 50 quality", function() {
       expect(afterOneDay(PASSES, 10, 49).quality).toBe(50);
       expect(afterOneDay(PASSES, 5, 49).quality).toBe(50);
+    });
+  });
+
+  describe("Conjured items", function() {
+    it("lose 2 quality each day", function() {
+      expect(afterOneDay(CONJURED, 5, 10)).toMatchObject({ sellIn: 4, quality: 8 });
+    });
+
+    it("lose 4 quality once the sell-by date has passed", function() {
+      expect(afterOneDay(CONJURED, 0, 10)).toMatchObject({ sellIn: -1, quality: 6 });
+    });
+
+    it("never have negative quality", function() {
+      expect(afterOneDay(CONJURED, 5, 1).quality).toBe(0);
+      expect(afterOneDay(CONJURED, 0, 3).quality).toBe(0);
     });
   });
 

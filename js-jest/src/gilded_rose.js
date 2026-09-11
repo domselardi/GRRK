@@ -29,6 +29,9 @@ const CATEGORIES = {
   normal: {
     qualityChange: -1,
   },
+  conjured: {
+    qualityChange: -2,   // twice as fast as normal
+  },
 };
 
 // Quality never goes above 50 or below 0
