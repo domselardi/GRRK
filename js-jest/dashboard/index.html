@@ -20,6 +20,7 @@
   .card { background: #fcfcfb; border: 1px solid rgba(11, 11, 11, 0.10); border-radius: 8px; padding: 16px; }
   .card p { margin-bottom: 12px; }
   .chart { height: 540px; }
+  #qualityHeatmap { height: 440px; }
 </style>
 </head>
 <body>
@@ -33,6 +34,12 @@
     <h2>Quality history</h2>
     <p>One line per item. Dots mark the days when a different rule took over.</p>
     <div id="qualityChart" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Quality heatmap</h2>
+    <p>Each row is an item and each column is a day. The darker the cell, the higher the quality.</p>
+    <div id="qualityHeatmap" class="chart"></div>
   </section>
 </main>
 
@@ -94,6 +101,38 @@ qualityChart.setOption({
   })),
 });
 window.addEventListener("resize", () => qualityChart.resize());
+
+// 2. Quality heatmap: every item on every day at a glance, in one hue from light (low) to dark (high)
+const QUALITY_SHADES = ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"];
+const qualityHeatmap = echarts.init(document.getElementById("qualityHeatmap"), null, { locale: "EN" });
+qualityHeatmap.setOption({
+  grid: { top: 8, left: 8, right: 16, bottom: 96, containLabel: true },
+  tooltip: {
+    formatter: p => {
+      const [day, row, quality] = p.value;
+      return `${escapeHtml(items[row].label)}<br>Day ${day}: quality <b>${quality}</b>, sellIn ${items[row].sellIn[day]}`;
+    },
+  },
+  xAxis: {
+    type: "category", name: "Day", nameLocation: "middle", nameGap: 28, data: days.map(String),
+    axisLine: { lineStyle: { color: "#c3c2b7" } }, axisTick: { show: false }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  yAxis: {
+    type: "category", inverse: true, data: items.map(item => item.label),   // first item on top, like the legend
+    axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#52514e" },
+  },
+  visualMap: {
+    min: 0, max: 80, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 240,
+    text: ["80", "0"], textStyle: { color: "#52514e" }, inRange: { color: QUALITY_SHADES },
+  },
+  series: [{
+    type: "heatmap",
+    data: items.flatMap((item, row) => item.quality.map((quality, day) => [day, row, quality])),
+    itemStyle: { borderColor: "#fcfcfb", borderWidth: 2 },   // a small gap between cells
+    emphasis: { itemStyle: { borderColor: "#0b0b0b", borderWidth: 1 } },
+  }],
+});
+window.addEventListener("resize", () => qualityHeatmap.resize());
 
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
