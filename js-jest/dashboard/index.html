@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gilded Rose dashboard</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px 16px;
+    background: #f9f9f7;
+    color: #0b0b0b;
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  p { color: #52514e; margin: 0; }
+  .card { background: #fcfcfb; border: 1px solid rgba(11, 11, 11, 0.10); border-radius: 8px; padding: 16px; }
+  .card p { margin-bottom: 12px; }
+  .chart { height: 540px; }
+  #qualityHeatmap { height: 440px; }
+  #changeChart { height: 380px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gilded Rose dashboard</h1>
+    <p>How every item in the shop changes over 30 days.</p>
+  </header>
+
+  <section class="card">
+    <h2>Quality history</h2>
+    <p>One line per item. Dots mark the days when a different rule took over.</p>
+    <div id="qualityChart" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Quality heatmap</h2>
+    <p>Each row is an item and each column is a day. The darker the cell, the higher the quality.</p>
+    <div id="qualityHeatmap" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Quality change on day <span id="changeDay"></span></h2>
+    <p>How much each item's quality went up (blue) or down (red) since the day before. Click a day on the charts above to pick another day.</p>
+    <div id="changeChart" class="chart"></div>
+  </section>
+</main>
+
+<script src="../node_modules/echarts/dist/echarts.min.js"></script>
+<script src="data.js"></script>
+<script>
+if (typeof DASHBOARD_DATA === "undefined") {
+  document.querySelector("main").innerHTML = "<p>No data yet. Run <code>npm run dashboard</code> to build it.</p>";
+  throw new Error("dashboard/data.js is missing");
+}
+
+const { days, items } = DASHBOARD_DATA;
+
+// Shared by every chart: one color per category (fixed order), and a different line style for
+// items in the same category, so each item looks the same everywhere on the dashboard
+const COLORS = { normal: "#2a78d6", aged: "#eb6834", legendary: "#1baf7a", backstagePasses: "#eda100", conjured: "#e87ba4" };
+const LINE_STYLES = ["solid", "dashed", "dotted"];
+const countInCategory = {};
+for (const item of items) {
+  countInCategory[item.category] = (countInCategory[item.category] || 0) + 1;
+  item.color = COLORS[item.category] || "#898781";
+  item.lineStyle = LINE_STYLES[(countInCategory[item.category] - 1) % LINE_STYLES.length];
+}
+
+// 1. Quality history: multi-series line chart, one line per item
+const qualityChart = echarts.init(document.getElementById("qualityChart"), null, { locale: "EN" });
+qualityChart.setOption({
+  legend: { top: 0, left: 0, right: 0, textStyle: { color: "#52514e" } },
+  grid: { top: 96, left: 48, right: 24, bottom: 56 },
+  toolbox: { bottom: 0, right: 0, feature: { dataView: { title: "Table view", readOnly: true } } },
+  tooltip: {
+    trigger: "axis",
+    formatter: params => [`Day ${params[0].axisValue}`].concat(params.map(p =>
+      `${p.marker}${escapeHtml(p.seriesName)}: quality <b>${p.value}</b>, sellIn ${items[p.seriesIndex].sellIn[p.dataIndex]}`)).join("<br>"),
+  },
+  xAxis: {
+    type: "category", name: "Day", nameLocation: "middle", nameGap: 28, boundaryGap: false,
+    data: days.map(String),
+    axisLine: { lineStyle: { color: "#c3c2b7" } }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  yAxis: {
+    type: "value", name: "Quality", min: 0,
+    splitLine: { lineStyle: { color: "#e1e0d9" } }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  series: items.map(item => ({
+    name: item.label,
+    type: "line",
+    data: item.quality,
+    showSymbol: false,
+    symbolSize: 8,
+    emphasis: { focus: "series" },   // hovering a line fades the others
+    itemStyle: { color: item.color },
+    lineStyle: { width: 2, type: item.lineStyle },
+    markPoint: {                     // the days a different rule took over
+      symbol: "circle", symbolSize: 10, label: { show: false },
+      itemStyle: { borderColor: "#fcfcfb", borderWidth: 2 },
+      data: item.ruleChanges.map(change => ({ coord: [String(change.day), item.quality[change.day]] })),
+    },
+  })),
+});
+window.addEventListener("resize", () => qualityChart.resize());
+
+// 2. Quality heatmap: every item on every day at a glance, in one hue from light (low) to dark (high)
+const QUALITY_SHADES = ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"];
+const qualityHeatmap = echarts.init(document.getElementById("qualityHeatmap"), null, { locale: "EN" });
+qualityHeatmap.setOption({
+  grid: { top: 8, left: 8, right: 16, bottom: 96, containLabel: true },
+  tooltip: {
+    formatter: p => {
+      const [day, row, quality] = p.value;
+      return `${escapeHtml(items[row].label)}<br>Day ${day}: quality <b>${quality}</b>, sellIn ${items[row].sellIn[day]}`;
+    },
+  },
+  xAxis: {
+    type: "category", name: "Day", nameLocation: "middle", nameGap: 28, data: days.map(String),
+    axisLine: { lineStyle: { color: "#c3c2b7" } }, axisTick: { show: false }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  yAxis: {
+    type: "category", inverse: true, data: items.map(item => item.label),   // first item on top, like the legend
+    axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: "#52514e" },
+  },
+  visualMap: {
+    min: 0, max: 80, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 240,
+    text: ["80", "0"], textStyle: { color: "#52514e" }, inRange: { color: QUALITY_SHADES },
+  },
+  series: [{
+    type: "heatmap",
+    data: items.flatMap((item, row) => item.quality.map((quality, day) => [day, row, quality])),
+    itemStyle: { borderColor: "#fcfcfb", borderWidth: 2 },   // a small gap between cells
+    emphasis: { itemStyle: { borderColor: "#0b0b0b", borderWidth: 1 } },
+  }],
+});
+window.addEventListener("resize", () => qualityHeatmap.resize());
+
+// 3. Quality change on one day: one bar per item, gains point right (blue), losses point left (red)
+const GAIN = "#2a78d6", LOSS = "#e34948";
+let selectedDay = 1;
+const changeChart = echarts.init(document.getElementById("changeChart"), null, { locale: "EN" });
+changeChart.setOption({
+  grid: { top: 8, left: 8, right: 40, bottom: 40, containLabel: true },
+  tooltip: {
+    formatter: p => {
+      const item = items[p.dataIndex];
+      return `${escapeHtml(item.label)}<br>Day ${selectedDay}: quality ${item.quality[selectedDay - 1]} → ${item.quality[selectedDay]} (<b>${signed(p.value)}</b>)`;
+    },
+  },
+  xAxis: {
+    type: "value", name: "Quality change since the day before", nameLocation: "middle", nameGap: 28,
+    min: extent => Math.min(0, Math.floor(extent.min * 1.2)),   // room past the longest bars for their labels
+    max: extent => Math.max(1, Math.ceil(extent.max * 1.2)),
+    minInterval: 1,                                              // changes are whole numbers
+    splitLine: { lineStyle: { color: "#e1e0d9" } }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  yAxis: {
+    type: "category", inverse: true, data: items.map(item => item.label),   // same order as the other charts
+    axisLine: { show: false, onZero: false }, axisTick: { show: false }, axisLabel: { color: "#52514e" },
+  },
+  series: [{
+    type: "bar",
+    barWidth: 16,
+    label: { show: true, color: "#52514e", formatter: p => signed(p.value) },
+    markLine: {                      // the zero line: no change
+      symbol: "none", silent: true, label: { show: false }, data: [{ xAxis: 0 }],
+      lineStyle: { color: "#c3c2b7", type: "solid", width: 1 },
+    },
+    data: [],
+  }],
+});
+window.addEventListener("resize", () => changeChart.resize());
+
+// Pick the day by clicking a day on the line chart or a cell on the heatmap
+qualityHeatmap.on("click", p => selectDay(p.value[0]));
+qualityChart.getZr().on("click", event => {
+  if (qualityChart.containPixel("grid", [event.offsetX, event.offsetY])) {
+    selectDay(Math.round(qualityChart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX)));
+  }
+});
+selectDay(1);
+
+function selectDay(day) {
+  selectedDay = day;
+  document.getElementById("changeDay").textContent = day === 0 ? "0 (the start, so no change yet)" : day;
+  changeChart.setOption({ series: [{ data: items.map(item => changeBar(item.qualityChange[day])) }] });
+}
+
+// A bar pointing right for a gain or left for a loss, rounded at its outer end
+function changeBar(change) {
+  return {
+    value: change,
+    itemStyle: { color: change > 0 ? GAIN : LOSS, borderRadius: change > 0 ? [0, 4, 4, 0] : [4, 0, 0, 4] },
+    label: { position: change < 0 ? "left" : "right" },
+  };
+}
+
+function signed(number) {
+  return (number > 0 ? "+" : "") + number;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
+}
+</script>
+</body>
+</html>

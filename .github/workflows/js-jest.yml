@@ -1,0 +1,47 @@
+name: js-jest
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - js-jest/**
+            - .github/workflows/js-jest.yml
+    pull_request:
+        branches:
+            - main
+        paths:
+            - js-jest/**
+            - .github/workflows/js-jest.yml
+
+jobs:
+    test-js-jest:
+        runs-on: ubuntu-latest
+
+        defaults:
+            run:
+                working-directory: js-jest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+                  cache-dependency-path: js-jest/package-lock.json
+
+            - name: Install dependencies
+              run: npm ci
+
+            # Unit tests, the saved 30-day report, and the coverage report
+            - name: Run tests with coverage
+              run: npm run test:coverage
+
+            - name: Run the TextTest fixture for 30 days
+              run: npm run texttest -- 30
+
+            - name: Build the dashboard data
+              run: npm run dashboard -- --no-open

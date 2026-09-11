@@ -1,9 +1,167 @@
+const { execFileSync } = require("child_process");
+const path = require("path");
 const {Shop, Item} = require("../src/gilded_rose");
 
+const ELIXIR = "Elixir of the Mongoose";
+const BRIE = "Aged Brie";
+const SULFURAS = "Sulfuras, Hand of Ragnaros";
+const PASSES = "Backstage passes to a TAFKAL80ETC concert";
+const CONJURED = "Conjured Mana Cake";
+
+// Runs one day for a single item and returns the item afterwards
+function afterOneDay(name, sellIn, quality) {
+  const gildedRose = new Shop([new Item(name, sellIn, quality)]);
+  return gildedRose.updateQuality()[0];
+}
+
 describe("Gilded Rose", function() {
-  it("should foo", function() {
-    const gildedRose = new Shop([new Item("foo", 0, 0)]);
-    const items = gildedRose.updateQuality();
-    expect(items[0].name).toBe("fixme");
+  describe("normal items", function() {
+    it("lower sellIn and quality by 1 each day", function() {
+      expect(afterOneDay(ELIXIR, 5, 10)).toMatchObject({ sellIn: 4, quality: 9 });
+    });
+
+    it("lose quality twice as fast once the sell-by date has passed", function() {
+      expect(afterOneDay(ELIXIR, 0, 10)).toMatchObject({ sellIn: -1, quality: 8 });
+    });
+
+    it("never have negative quality", function() {
+      expect(afterOneDay(ELIXIR, 5, 0).quality).toBe(0);
+      expect(afterOneDay(ELIXIR, 0, 1).quality).toBe(0);
+    });
+  });
+
+  describe("Aged Brie", function() {
+    it("gains 1 quality each day", function() {
+      expect(afterOneDay(BRIE, 5, 10)).toMatchObject({ sellIn: 4, quality: 11 });
+    });
+
+    it("gains 2 quality once the sell-by date has passed", function() {
+      expect(afterOneDay(BRIE, 0, 10)).toMatchObject({ sellIn: -1, quality: 12 });
+    });
+
+    it("never goes above 50 quality", function() {
+      expect(afterOneDay(BRIE, 5, 50).quality).toBe(50);
+      expect(afterOneDay(BRIE, 0, 49).quality).toBe(50);
+    });
+  });
+
+  describe("Sulfuras", function() {
+    it("never has to be sold and never changes quality", function() {
+      expect(afterOneDay(SULFURAS, 0, 80)).toMatchObject({ sellIn: 0, quality: 80 });
+      expect(afterOneDay(SULFURAS, -1, 80)).toMatchObject({ sellIn: -1, quality: 80 });
+    });
+  });
+
+  describe("Backstage passes", function() {
+    it("gain 1 quality when there are more than 10 days left", function() {
+      expect(afterOneDay(PASSES, 11, 20)).toMatchObject({ sellIn: 10, quality: 21 });
+    });
+
+    it("gain 2 quality when there are 10 days or less", function() {
+      expect(afterOneDay(PASSES, 10, 20).quality).toBe(22);
+      expect(afterOneDay(PASSES, 6, 20).quality).toBe(22);
+    });
+
+    it("gain 3 quality when there are 5 days or less", function() {
+      expect(afterOneDay(PASSES, 5, 20).quality).toBe(23);
+      expect(afterOneDay(PASSES, 1, 20).quality).toBe(23);
+    });
+
+    it("drop to 0 quality after the concert", function() {
+      expect(afterOneDay(PASSES, 0, 20)).toMatchObject({ sellIn: -1, quality: 0 });
+    });
+
+    it("never go above 50 quality", function() {
+      expect(afterOneDay(PASSES, 10, 49).quality).toBe(50);
+      expect(afterOneDay(PASSES, 5, 49).quality).toBe(50);
+    });
+  });
+
+  describe("Conjured items", function() {
+    it("lose 2 quality each day", function() {
+      expect(afterOneDay(CONJURED, 5, 10)).toMatchObject({ sellIn: 4, quality: 8 });
+    });
+
+    it("lose 4 quality once the sell-by date has passed", function() {
+      expect(afterOneDay(CONJURED, 0, 10)).toMatchObject({ sellIn: -1, quality: 6 });
+    });
+
+    it("never have negative quality", function() {
+      expect(afterOneDay(CONJURED, 5, 1).quality).toBe(0);
+      expect(afterOneDay(CONJURED, 0, 3).quality).toBe(0);
+    });
+  });
+
+  it("works with an empty shop", function() {
+    expect(new Shop().updateQuality()).toEqual([]);
+  });
+
+  describe("product catalog", function() {
+    it("uses the category the catalog names for each product", function() {
+      const catalog = { "Mystery Cheese": "aged", "Rock Night Ticket": "backstagePasses" };
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10), new Item("Rock Night Ticket", 5, 20)], catalog);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([11, 23]);
+    });
+
+    it("treats a product as normal when the catalog says normal, whatever its name", function() {
+      const catalog = { "Aged Cheddar": "normal", "toString": "normal" };
+      const gildedRose = new Shop([new Item("Aged Cheddar", 5, 10), new Item("toString", 5, 10)], catalog);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([9, 9]);
+    });
+
+    it("stops with a clear error when a product is not in the catalog", function() {
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10)]);
+      expect(() => gildedRose.updateQuality()).toThrow('Product "Mystery Cheese" is not in the catalog');
+    });
+
+    it("stops with a clear error when the catalog names an unknown category", function() {
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10)], { "Mystery Cheese": "agde" });
+      expect(() => gildedRose.updateQuality()).toThrow('Unknown category "agde"');
+    });
+
+    it("finds products whatever their casing, commas, accents or special characters", function() {
+      const gildedRose = new Shop([
+        new Item("sulfuras hand of ragnaros", 5, 80),
+        new Item("AGED BRIE!", 5, 10),
+        new Item("Backstage passes, to a TAFKAL80ETC concert?", 5, 20),
+      ]);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([80, 11, 23]);
+
+      const withAccents = new Shop([new Item("creme brulee", 5, 10)], { "Crème Brûlée": "aged" });
+      expect(withAccents.updateQuality()[0].quality).toBe(11);
+    });
+
+    it("stops with a clear error when the catalog lists the same product twice", function() {
+      expect(() => new Shop([], { "Aged Brie": "aged", "aged brie!": "normal" })).toThrow('The catalog lists "aged brie!" twice');
+    });
+  });
+
+  describe("timeline", function() {
+    it("starts with the inventory of day 0", function() {
+      const gildedRose = new Shop([new Item(ELIXIR, 5, 10)]);
+      expect(gildedRose.timeline).toEqual([[{ name: ELIXIR, sellIn: 5, quality: 10 }]]);
+    });
+
+    it("saves every day, and a saved day never changes", function() {
+      const gildedRose = new Shop([new Item(ELIXIR, 5, 10)]);
+      gildedRose.updateQuality();
+      gildedRose.updateQuality();
+      expect(gildedRose.timeline.map(day => day[0].quality)).toEqual([10, 9, 8]);
+    });
+
+    it("has Day 0 to Day 30 after 30 days, with the last day matching the shop", function() {
+      const gildedRose = new Shop([new Item(BRIE, 2, 0)]);
+      for (let day = 1; day <= 30; day++) gildedRose.updateQuality();
+      expect(gildedRose.timeline).toHaveLength(31);
+      expect(gildedRose.timeline[30]).toEqual(gildedRose.items);
+      expect(gildedRose.timeline[30][0]).not.toBe(gildedRose.items[0]);   // a copy, not the item itself
+    });
+  });
+
+  // Saves the full 30-day fixture report, so any change in behavior shows up as a diff
+  it("prints the same 30-day report", function() {
+    const fixture = path.join(__dirname, "texttest_fixture.js");
+    const report = execFileSync("node", [fixture, "30"], { encoding: "utf8" });
+    expect(report).toMatchSnapshot();
   });
 });
