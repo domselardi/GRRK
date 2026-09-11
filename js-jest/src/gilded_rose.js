@@ -68,13 +68,18 @@ function searchableCatalog(catalog) {
   return new Map(names.map((name, index) => [keys[index], catalog[name]]));
 }
 
+// A copy of every item, so a saved day never changes later
+const snapshot = items => items.map(({ name, sellIn, quality }) => new Item(name, sellIn, quality));
+
 class Shop {
   constructor(items=[], catalog=CATALOG){
     this.items = items;
     this.catalog = searchableCatalog(catalog);
+    this.timeline = [snapshot(items)];            // Day 0
   }
   updateQuality() {
     this.items.forEach(item => updateItem(item, this.categoryOf(item.name)));
+    this.timeline.push(snapshot(this.items));     // Day 1, 2, 3...
     return this.items;
   }
   // Every product must be in the catalog

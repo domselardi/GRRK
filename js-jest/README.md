@@ -28,6 +28,16 @@ To generate test coverage report
 npm run test:coverage
 ```
 
+## View the dashboard
+
+To see how every item in the shop changes over 30 days, run
+
+```sh
+npm run dashboard
+```
+
+It runs the shop for 30 days, saves the data in `dashboard/data.js` and opens `dashboard/index.html` in your browser.
+
 ## Run the TextTest fixture from the Command-Line
 
 For e.g. 10 days:

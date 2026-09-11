@@ -136,6 +136,28 @@ describe("Gilded Rose", function() {
     });
   });
 
+  describe("timeline", function() {
+    it("starts with the inventory of day 0", function() {
+      const gildedRose = new Shop([new Item(ELIXIR, 5, 10)]);
+      expect(gildedRose.timeline).toEqual([[{ name: ELIXIR, sellIn: 5, quality: 10 }]]);
+    });
+
+    it("saves every day, and a saved day never changes", function() {
+      const gildedRose = new Shop([new Item(ELIXIR, 5, 10)]);
+      gildedRose.updateQuality();
+      gildedRose.updateQuality();
+      expect(gildedRose.timeline.map(day => day[0].quality)).toEqual([10, 9, 8]);
+    });
+
+    it("has Day 0 to Day 30 after 30 days, with the last day matching the shop", function() {
+      const gildedRose = new Shop([new Item(BRIE, 2, 0)]);
+      for (let day = 1; day <= 30; day++) gildedRose.updateQuality();
+      expect(gildedRose.timeline).toHaveLength(31);
+      expect(gildedRose.timeline[30]).toEqual(gildedRose.items);
+      expect(gildedRose.timeline[30][0]).not.toBe(gildedRose.items[0]);   // a copy, not the item itself
+    });
+  });
+
   // Saves the full 30-day fixture report, so any change in behavior shows up as a diff
   it("prints the same 30-day report", function() {
     const fixture = path.join(__dirname, "texttest_fixture.js");

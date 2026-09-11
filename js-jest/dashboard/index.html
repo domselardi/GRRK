@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gilded Rose dashboard</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px 16px;
+    background: #f9f9f7;
+    color: #0b0b0b;
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  p { color: #52514e; margin: 0; }
+  .card { background: #fcfcfb; border: 1px solid rgba(11, 11, 11, 0.10); border-radius: 8px; padding: 16px; }
+  .card p { margin-bottom: 12px; }
+  .chart { height: 540px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gilded Rose dashboard</h1>
+    <p>How every item in the shop changes over 30 days.</p>
+  </header>
+
+  <section class="card">
+    <h2>Quality history</h2>
+    <p>One line per item. Dots mark the days when a different rule took over.</p>
+    <div id="qualityChart" class="chart"></div>
+  </section>
+</main>
+
+<script src="../node_modules/echarts/dist/echarts.min.js"></script>
+<script src="data.js"></script>
+<script>
+if (typeof DASHBOARD_DATA === "undefined") {
+  document.querySelector("main").innerHTML = "<p>No data yet. Run <code>npm run dashboard</code> to build it.</p>";
+  throw new Error("dashboard/data.js is missing");
+}
+
+const { days, items } = DASHBOARD_DATA;
+
+// Shared by every chart: one color per category (fixed order), and a different line style for
+// items in the same category, so each item looks the same everywhere on the dashboard
+const COLORS = { normal: "#2a78d6", aged: "#eb6834", legendary: "#1baf7a", backstagePasses: "#eda100", conjured: "#e87ba4" };
+const LINE_STYLES = ["solid", "dashed", "dotted"];
+const countInCategory = {};
+for (const item of items) {
+  countInCategory[item.category] = (countInCategory[item.category] || 0) + 1;
+  item.color = COLORS[item.category] || "#898781";
+  item.lineStyle = LINE_STYLES[(countInCategory[item.category] - 1) % LINE_STYLES.length];
+}
+
+// 1. Quality history: multi-series line chart, one line per item
+const qualityChart = echarts.init(document.getElementById("qualityChart"), null, { locale: "EN" });
+qualityChart.setOption({
+  legend: { top: 0, left: 0, right: 0, textStyle: { color: "#52514e" } },
+  grid: { top: 96, left: 48, right: 24, bottom: 56 },
+  toolbox: { bottom: 0, right: 0, feature: { dataView: { title: "Table view", readOnly: true } } },
+  tooltip: {
+    trigger: "axis",
+    formatter: params => [`Day ${params[0].axisValue}`].concat(params.map(p =>
+      `${p.marker}${escapeHtml(p.seriesName)}: quality <b>${p.value}</b>, sellIn ${items[p.seriesIndex].sellIn[p.dataIndex]}`)).join("<br>"),
+  },
+  xAxis: {
+    type: "category", name: "Day", nameLocation: "middle", nameGap: 28, boundaryGap: false,
+    data: days.map(String),
+    axisLine: { lineStyle: { color: "#c3c2b7" } }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  yAxis: {
+    type: "value", name: "Quality", min: 0,
+    splitLine: { lineStyle: { color: "#e1e0d9" } }, axisLabel: { color: "#898781" }, nameTextStyle: { color: "#52514e" },
+  },
+  series: items.map(item => ({
+    name: item.label,
+    type: "line",
+    data: item.quality,
+    showSymbol: false,
+    symbolSize: 8,
+    emphasis: { focus: "series" },   // hovering a line fades the others
+    itemStyle: { color: item.color },
+    lineStyle: { width: 2, type: item.lineStyle },
+    markPoint: {                     // the days a different rule took over
+      symbol: "circle", symbolSize: 10, label: { show: false },
+      itemStyle: { borderColor: "#fcfcfb", borderWidth: 2 },
+      data: item.ruleChanges.map(change => ({ coord: [String(change.day), item.quality[change.day]] })),
+    },
+  })),
+});
+window.addEventListener("resize", () => qualityChart.resize());
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
+}
+</script>
+</body>
+</html>
