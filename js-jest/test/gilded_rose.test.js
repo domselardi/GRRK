@@ -2,6 +2,7 @@ const { execFileSync } = require("child_process");
 const path = require("path");
 const {Shop, Item} = require("../src/gilded_rose");
 
+const ELIXIR = "Elixir of the Mongoose";
 const BRIE = "Aged Brie";
 const SULFURAS = "Sulfuras, Hand of Ragnaros";
 const PASSES = "Backstage passes to a TAFKAL80ETC concert";
@@ -15,16 +16,16 @@ function afterOneDay(name, sellIn, quality) {
 describe("Gilded Rose", function() {
   describe("normal items", function() {
     it("lower sellIn and quality by 1 each day", function() {
-      expect(afterOneDay("Elixir", 5, 10)).toMatchObject({ sellIn: 4, quality: 9 });
+      expect(afterOneDay(ELIXIR, 5, 10)).toMatchObject({ sellIn: 4, quality: 9 });
     });
 
     it("lose quality twice as fast once the sell-by date has passed", function() {
-      expect(afterOneDay("Elixir", 0, 10)).toMatchObject({ sellIn: -1, quality: 8 });
+      expect(afterOneDay(ELIXIR, 0, 10)).toMatchObject({ sellIn: -1, quality: 8 });
     });
 
     it("never have negative quality", function() {
-      expect(afterOneDay("Elixir", 5, 0).quality).toBe(0);
-      expect(afterOneDay("Elixir", 0, 1).quality).toBe(0);
+      expect(afterOneDay(ELIXIR, 5, 0).quality).toBe(0);
+      expect(afterOneDay(ELIXIR, 0, 1).quality).toBe(0);
     });
   });
 
@@ -77,6 +78,46 @@ describe("Gilded Rose", function() {
 
   it("works with an empty shop", function() {
     expect(new Shop().updateQuality()).toEqual([]);
+  });
+
+  describe("product catalog", function() {
+    it("uses the category the catalog names for each product", function() {
+      const catalog = { "Mystery Cheese": "aged", "Rock Night Ticket": "backstagePasses" };
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10), new Item("Rock Night Ticket", 5, 20)], catalog);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([11, 23]);
+    });
+
+    it("treats a product as normal when the catalog says normal, whatever its name", function() {
+      const catalog = { "Aged Cheddar": "normal", "toString": "normal" };
+      const gildedRose = new Shop([new Item("Aged Cheddar", 5, 10), new Item("toString", 5, 10)], catalog);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([9, 9]);
+    });
+
+    it("stops with a clear error when a product is not in the catalog", function() {
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10)]);
+      expect(() => gildedRose.updateQuality()).toThrow('Product "Mystery Cheese" is not in the catalog');
+    });
+
+    it("stops with a clear error when the catalog names an unknown category", function() {
+      const gildedRose = new Shop([new Item("Mystery Cheese", 5, 10)], { "Mystery Cheese": "agde" });
+      expect(() => gildedRose.updateQuality()).toThrow('Unknown category "agde"');
+    });
+
+    it("finds products whatever their casing, commas, accents or special characters", function() {
+      const gildedRose = new Shop([
+        new Item("sulfuras hand of ragnaros", 5, 80),
+        new Item("AGED BRIE!", 5, 10),
+        new Item("Backstage passes, to a TAFKAL80ETC concert?", 5, 20),
+      ]);
+      expect(gildedRose.updateQuality().map(item => item.quality)).toEqual([80, 11, 23]);
+
+      const withAccents = new Shop([new Item("creme brulee", 5, 10)], { "Crème Brûlée": "aged" });
+      expect(withAccents.updateQuality()[0].quality).toBe(11);
+    });
+
+    it("stops with a clear error when the catalog lists the same product twice", function() {
+      expect(() => new Shop([], { "Aged Brie": "aged", "aged brie!": "normal" })).toThrow('The catalog lists "aged brie!" twice');
+    });
   });
 
   // Saves the full 30-day fixture report, so any change in behavior shows up as a diff
